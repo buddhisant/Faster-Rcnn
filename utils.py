@@ -103,6 +103,10 @@ def compute_base_anchors():
     return base_anchors
 
 def compute_anchors(base_anchors,scales,device,dtype):
+    """
+    根据base anchor来得到全部的anchor
+    :param base_anchors: 数据类型为list，每个元素的shape为[3,4]，表示3个基础anchor
+    """
     all_anchors=[]
     for i,scale in enumerate(scales):
         stride=cfg.fpn_strides[i]
@@ -125,6 +129,9 @@ def compute_anchors(base_anchors,scales,device,dtype):
     return all_anchors
 
 def reg_encode(anchors,gtbboxes,mean,std):
+    """
+    对于物体框的编码
+    """
     ax=(anchors[:,0]+anchors[:,2])*0.5
     ay=(anchors[:,1]+anchors[:,3])*0.5
     aw=anchors[:,2]-anchors[:,0]
@@ -145,6 +152,9 @@ def reg_encode(anchors,gtbboxes,mean,std):
     return delta
 
 def reg_decode(anchors, delta,mean,std,max_shape=None):
+    """
+    对于物体框的解码
+    """
     ax = (anchors[:, 0] + anchors[:, 2]) * 0.5
     ay = (anchors[:, 1] + anchors[:, 3]) * 0.5
     aw = anchors[:, 2] - anchors[:, 0]
