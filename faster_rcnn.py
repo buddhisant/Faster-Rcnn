@@ -20,31 +20,34 @@ class Faster_RCNN(torch.nn.Module):
         self.resNet=resNet()
         self.fpn=PyramidFeatures()
         self.rpn=Rpn(is_train=self.is_train)
+        
+        # 构建roialign层，注意默认情况下fpn有5层feature map，但是只对前4层feature map采用roialign操作
         self.roialign_layer=nn.ModuleList([RoIAlign(cfg.roialign_size,1/cfg.fpn_strides[i],sampling_ratio=0) for i in range(len(cfg.roialign_layers))])
-
+        
+        # 在head网络中进行检测时，一个roi最终会由一个向量来表示，这里的input_channels表示这个向量的长度
         input_channels=cfg.fpn_channels*cfg.roialign_size**2
         self.shared_fc1=nn.Linear(input_channels,cfg.head_base_channels)
         self.shared_fc2=nn.Linear(cfg.head_base_channels,cfg.head_base_channels)
         self.fc_cls=nn.Linear(cfg.head_base_channels,cfg.num_classes+1)
         self.fc_reg=nn.Linear(cfg.head_base_channels,cfg.num_classes*4)
 
-        loss_config = {}
-        loss_config["sample_nums"] = cfg.head_nums
-        loss_config["pos_fraction"] = cfg.head_pos_fraction
-        loss_config["encode_mean"] = cfg.head_encode_mean
+        loss_config = {} 
+        loss_config["sample_nums"] = cfg.head_nums #表示head网络在训练时，每张图片中选取的样本（正样本+负样本）的数量
+        loss_config["pos_fraction"] = cfg.head_pos_fraction #在全部样本中，正样本的占比
+        loss_config["encode_mean"] = cfg.head_encode_mean 
         loss_config["encode_std"] = cfg.head_encode_std
         loss_config["num_classes"] = cfg.num_classes
-        loss_config["neg_th"] = cfg.head_neg_th
-        loss_config["pos_th"] = cfg.head_pos_th
+        loss_config["neg_th"] = cfg.head_neg_th #head网络在训练时，生成负样本的iou阈值
+        loss_config["pos_th"] = cfg.head_pos_th #head网络在训练时，生成正样本的iou阈值
         self.loss=Loss(loss_config,is_rpn=False)
 
         inference_config = {}
         inference_config["encode_mean"] = cfg.head_encode_mean
         inference_config["encode_std"] = cfg.head_encode_std
         inference_config["num_classes"] = cfg.num_classes
-        inference_config["nms_threshold"] = cfg.head_nms_threshold
-        inference_config["nms_post"] = cfg.head_nms_post
-        inference_config["pos_th"] = cfg.head_pos_th_test
+        inference_config["nms_threshold"] = cfg.head_nms_threshold #生成预测框之后，采用nms去冗余的iou阈值
+        inference_config["nms_post"] = cfg.head_nms_post #用nms对预测框去冗余之后，只保留一定数量的预测框
+        inference_config["pos_th"] = cfg.head_pos_th_test #在nms之前，判断一个预测框是不是正样本，进行初步的判断
         inference_config["cls_output_channels"] = cfg.num_classes+1
         self.inference = Inference(inference_config, is_rpn=False)
 
@@ -58,6 +61,10 @@ class Faster_RCNN(torch.nn.Module):
             nn.init.constant_(m.bias,0)
 
     def collect_proposal(self, proposals):
+        """
+        在训练head网络时，首先将一个batch中所有图片的proposal集中起来
+        :param proposals: rpn为每张图片生成的proposal
+        """
         batch_valids=[]
         batch_proposals=[]
         batch_size=len(proposals)
@@ -68,19 +75,25 @@ class Faster_RCNN(torch.nn.Module):
             batch_proposals.append(proposal)
             nums_proposal=proposal.size(0)
             valid_per_img=proposal.new_zeros((batch_size*nums_proposal,),dtype=torch.bool)
-            valid_per_img[i*nums_proposal:(i+1)*nums_proposal]=1
+            valid_per_img[i*nums_proposal:(i+1)*nums_proposal]=1 # 因为把一个batch的proposal都集中到了一起，所以就需要为每张图片单独标记出它自己的proposal。
             batch_valids.append(valid_per_img)
         batch_proposals=torch.cat(batch_proposals)
 
         return batch_proposals,batch_valids
 
     def extract_roi(self,features,roi_location):
+        """
+        roialign层
+        :param features: 金字塔特征层
+        :param roi_location: shape为[N*512, 5]，即roi对应的坐标，其中第一列表示这个roi属于那一张图片，如果属于这个batch的第一张图片，则取值为0。后4列为坐标
+        """
+        # 需要首相根据每个roi的尺寸，划分到不同层次的feature map上，提取相应的特征
         scale=torch.sqrt((roi_location[:,3]-roi_location[:,1])*(roi_location[:,4]-roi_location[:,2]))
         target_lvls=torch.floor(torch.log2(scale/cfg.finest_scale+1e-6))
         target_lvls=target_lvls.clamp(min=0,max=len(features)-2).long()
 
         roi_feats=features[0].new_zeros(roi_location.size(0),cfg.fpn_channels,cfg.roialign_size,cfg.roialign_size)
-
+        
         for i in range(len(features)-1):
             mask=target_lvls==i
             inds=mask.nonzero(as_tuple=False).squeeze(1)
@@ -94,6 +107,11 @@ class Faster_RCNN(torch.nn.Module):
         return roi_feats
 
     def forward(self,images,ori_img_shape=None,res_img_shape=None,pad_img_shape=None,gt_bboxes=None,gt_labels=None):
+        """
+        :param ori_img_shape: 图片原始的尺寸
+        :param res_img_shape: 默认按照(800,1333)对图片进行放缩，res_img_shape即表示放缩后的尺寸
+        :param pad_img_shape: 放缩后的图片尺寸不能保证被32整除，因此需要pad，pad_img_shape即表示pad后的尺寸
+        """
         loss={}
 
         c2,c3,c4,c5=self.resNet(images)
