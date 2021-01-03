@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 class Inference():
     def __init__(self,config,is_rpn=True):
+        # self.is_rpn表示当前是rpn网络还是head网络，由于rpn网络是密集检测，而head网络是稀疏网络，因此需要不同的处理。
         self.is_rpn=is_rpn
         self.encode_mean = config.get("encode_mean",None)
         self.encode_std = config.get("encode_std",None)
@@ -17,10 +18,14 @@ class Inference():
         self.cls_output_channels = config.get("cls_output_channels",None)
 
     def danse_inference(self, cls_preds, reg_preds, anchors, res_img_shapes):
+        """
+        为rpn网络进行inference计算
+        """
         batch_size = len(res_img_shapes)
 
         results = []
         for i in range(batch_size):
+            # 注意到这里对于采用了detach操作，是为了保证head网络部分的loss不会对rpn网络造成影响
             cls_preds_per_img = [cls_pred[i, :].permute(1, 2, 0).reshape(-1, self.cls_output_channels).detach() for
                                  cls_pred in cls_preds]
             reg_preds_per_img = [reg_pred[i, :].permute(1, 2, 0).reshape(-1, self.num_classes * 4).detach() for reg_pred
@@ -60,7 +65,7 @@ class Inference():
             mean = candidate_anchors.new_tensor(self.encode_mean).view(1, 4)
             std = candidate_anchors.new_tensor(self.encode_std).view(1, 4)
             proposal = utils.reg_decode(candidate_anchors, candidate_factors, mean, std, res_img_shapes[i])
-
+        
             scores, bboxes = utils.ml_nms(candidate_scores, proposal, candidate_ids, self.nms_threshold)
             scores = scores[:self.nms_post]
             bboxes = bboxes[:self.nms_post]
@@ -70,8 +75,12 @@ class Inference():
         return results
 
     def sparse_inference(self, cls_preds, reg_preds, anchors, res_img_shapes):
+        """
+        为head网络进行inference计算
+        """
         cls_scores=F.softmax(cls_preds,dim=1)
         cls_scores=cls_scores[:,:-1].contiguous()
+        #首先根据预测出的分类得分，初步筛选出正样本
         mask_pos=cls_scores>=self.pos_th
 
         pos_location=torch.nonzero(mask_pos,as_tuple=False)
