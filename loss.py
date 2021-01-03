@@ -6,6 +6,9 @@ import torch.nn.functional as F
 import config as cfg
 
 class BCELoss(nn.Module):
+    """
+    rpn网络的分类loss默认采用bce loss
+    """
     def __init__(self):
         super(BCELoss, self).__init__()
 
@@ -17,6 +20,9 @@ class BCELoss(nn.Module):
         return loss
 
 class CELoss(nn.Module):
+    """
+    head网络的分类loss默认采用ce loss
+    """
     def __init__(self):
         super(CELoss, self).__init__()
 
@@ -26,6 +32,9 @@ class CELoss(nn.Module):
         return loss
 
 class L1Loss(nn.Module):
+    """
+    rpn网络和head网络的回归loss都采用L1 loss
+    """
     def __init__(self):
         super(L1Loss, self).__init__()
 
@@ -37,6 +46,7 @@ class L1Loss(nn.Module):
 class Loss(nn.Module):
     def __init__(self, config, is_rpn=True):
         super(Loss, self).__init__()
+        # 由于rpn网络是密集检测，而head网络是稀疏检测，因此在计算Loss是需要不同的处理
         self.is_rpn=is_rpn
         self.sample_nums=config.get("sample_nums",None)
         self.pos_fraction=config.get("pos_fraction",None)
@@ -60,6 +70,13 @@ class Loss(nn.Module):
         return rand_inds
 
     def compute_targets(self,anchors,valids,gt_bboxes,gt_labels=None):
+        """
+        计算Loss之前需要首先计算target
+        :param anchors: shape为[N, 4]，对于rpn网络，anchors参数表示预设anchor，对于head网络，anchors参数表示proposal
+        :param valids: shape为[N,]，表示对于一张图片，哪些anchor对于它是有效的，或者是属于它的。
+        :param gt_bboxes: 数据类型为list
+        :param gt_labels: 数据类型为list
+        """
         targets=[]
 
         for i, valid in enumerate(valids):
@@ -68,6 +85,7 @@ class Loss(nn.Module):
             gt_label=gt_labels[i] if (not gt_labels is None) else None
             valid_anchor=anchors[valid]
             if(not self.is_rpn):
+                #训练head网络时，默认将ground truth bbox也作为roi进行训练
                 valid_anchor=torch.cat([gt_bbox,valid_anchor])
 
             assigned_gt_inds=torch.full((valid_anchor.size(0),),fill_value=-1,device=valid_anchor.device,dtype=torch.long)
@@ -117,6 +135,9 @@ class Loss(nn.Module):
 
 
     def dense_pred_collect(self,cls_preds,reg_preds, targets):
+        """
+        在rpn网络训练时，选取正样本和负样本的分类预测与回归预测，其它样本被丢弃，不会贡献loss
+        """
         cls_preds_batch = []
         reg_preds_batch = []
         for i in range(cls_preds[0].size(0)):
@@ -142,6 +163,9 @@ class Loss(nn.Module):
         return cls_preds_batch, reg_preds_batch
 
     def sparse_pred_collect(self, cls_preds, reg_preds, targets):
+        """
+        在head网络训练时，选取正样本和负样本的分类预测与回归预测
+        """
         reg_preds=reg_preds.reshape(reg_preds.size(0),-1,4)
 
         reg_preds_batch=[]
