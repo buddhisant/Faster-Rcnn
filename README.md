@@ -13,10 +13,10 @@
 ![测试结果](https://raw.githubusercontent.com/buddhisant/atss_pytorch/main/atss.png)
 |  | map | 推理速度 |
 |:-:|:-:|:-:|
-|faster rcnn| 39.4 | 17.43 |
-|mmdetection对应配置|39.4| 17.9 |
+|faster rcnn| 37.4 | 20.99 |
+|mmdetection对应配置|37.4| 21.4 |
 
-测试在rtx2080ti上进行
+推理速度在rtx2080ti上测得
 
 # 使用方法：
 - git clone https://github.com/buddhisant/Faster-Rcnn.git
