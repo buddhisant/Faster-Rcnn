@@ -10,7 +10,7 @@
 **请确保已经安装pycocotools以及1.1.0版本以上的pytorch**
 
 # 性能
-![测试结果](https://raw.githubusercontent.com/buddhisant/atss_pytorch/main/atss.png)
+![测试结果](https://raw.githubusercontent.com/buddhisant/Faster-Rcnn/main/performance.png)
 |  | map | 推理速度 |
 |:-:|:-:|:-:|
 |faster rcnn| 37.4 | 20.99 |
